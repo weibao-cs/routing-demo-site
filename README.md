@@ -2,6 +2,10 @@
 
 An interactive browser demonstration of end-to-end packet encapsulation, routing through R1 and R2, and decapsulation at the destination.
 
+## Live demo
+
+<https://weibao-cs.github.io/routing-demo-site/>
+
 ## Run locally
 
 Open `index.html` directly in a browser, or start a local server:
