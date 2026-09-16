@@ -1,0 +1,368 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <meta name="description" content="Interactive end-to-end IP and MAC header routing demonstration.">
+  <title>Packet Encapsulation & Routing Demo</title>
+  <style>
+    :root {
+      color-scheme: light dark;
+      --bg: #f6f7fb;
+      --surface: #ffffff;
+      --surface-2: #eef1f7;
+      --text: #162033;
+      --muted: #657085;
+      --border: #ccd3df;
+      --primary: #2563eb;
+      --primary-soft: #dbeafe;
+      --ip: #7c3aed;
+      --data: #e5e7eb;
+      --shadow: 0 16px 44px rgba(15, 23, 42, .10);
+    }
+    @media (prefers-color-scheme: dark) {
+      :root {
+        --bg: #0f1420;
+        --surface: #171e2d;
+        --surface-2: #222b3d;
+        --text: #edf2ff;
+        --muted: #a9b3c6;
+        --border: #39445a;
+        --primary: #60a5fa;
+        --primary-soft: #172e51;
+        --ip: #a78bfa;
+        --data: #39445a;
+        --shadow: 0 16px 44px rgba(0, 0, 0, .28);
+      }
+    }
+    * { box-sizing: border-box; }
+    body {
+      margin: 0;
+      min-width: 320px;
+      background: var(--bg);
+      color: var(--text);
+      font-family: Inter, ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+    }
+    button { font: inherit; }
+    .page {
+      width: min(1180px, calc(100% - 32px));
+      margin: 0 auto;
+      padding: 34px 0 44px;
+    }
+    .hero {
+      display: flex;
+      align-items: flex-start;
+      justify-content: space-between;
+      gap: 20px;
+      margin-bottom: 18px;
+    }
+    h1 { margin: 0; font-size: clamp(1.45rem, 3vw, 2rem); line-height: 1.15; }
+    .subtitle { margin: 7px 0 0; color: var(--muted); }
+    .step-badge, .operation-badge {
+      flex: 0 0 auto;
+      border-radius: 999px;
+      padding: 7px 11px;
+      background: var(--primary-soft);
+      color: var(--text);
+      font-size: .86rem;
+      font-weight: 700;
+    }
+    .demo-card {
+      padding: 20px;
+      border: 1px solid var(--border);
+      border-radius: 20px;
+      background: var(--surface);
+      box-shadow: var(--shadow);
+    }
+    .stage { width: 100%; min-height: 420px; }
+    .route-svg { display: block; width: 100%; height: auto; overflow: visible; }
+    .device-label, .layer-label, .packet-text, .network-label { fill: var(--text); text-anchor: middle; }
+    .device-label { font-weight: 700; }
+    .device-meta, .network-label { fill: var(--muted); }
+    .layer-box { fill: var(--surface); stroke: var(--border); stroke-width: 1.5; }
+    .layer.active .layer-box { stroke: var(--primary); stroke-width: 4; }
+    .network-line { stroke: var(--border); stroke-width: 3; stroke-linecap: round; }
+    .network-line.active { stroke: var(--primary); stroke-width: 7; }
+    .direction-path { fill: none; stroke: var(--muted); stroke-width: 2; stroke-dasharray: 5 6; opacity: .45; }
+    .packet { transition: transform 950ms ease-in-out; }
+    .packet-segment { transition: opacity 260ms ease, transform 360ms ease; }
+    .packet-segment.is-hidden { opacity: 0; transform: scaleX(.15); }
+    .packet-mac rect { fill: var(--primary); }
+    .packet-ip rect { fill: var(--ip); }
+    .packet-data rect { fill: var(--data); }
+    .packet-mac text, .packet-ip text { fill: #ffffff; }
+    .packet-data text { fill: var(--text); }
+    .packet-segment rect { rx: 6; }
+    .packet-text { font-weight: 700; }
+    .small { font-size: 12px; }
+    .state-row {
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      gap: 16px;
+      margin-top: 2px;
+    }
+    .state-title { margin: 0; font-size: 1rem; }
+    .state-description { margin: 4px 0 0; color: var(--muted); }
+    .headers {
+      display: grid;
+      grid-template-columns: repeat(2, minmax(0, 1fr));
+      gap: 14px;
+      margin-top: 18px;
+    }
+    .header-card {
+      padding: 15px;
+      border: 1px solid var(--border);
+      border-radius: 14px;
+      background: var(--surface-2);
+    }
+    .header-name {
+      display: flex;
+      align-items: center;
+      gap: 8px;
+      margin-bottom: 9px;
+      font-weight: 700;
+    }
+    .dot { width: 10px; height: 10px; border-radius: 50%; background: var(--ip); }
+    .mac .dot { background: var(--primary); }
+    dl { display: grid; grid-template-columns: max-content minmax(0, 1fr); gap: 6px 13px; margin: 0; }
+    dt { color: var(--muted); }
+    dd { margin: 0; overflow-wrap: anywhere; font-family: ui-monospace, SFMono-Regular, Menlo, monospace; }
+    .progress { height: 7px; margin: 18px 0 14px; border-radius: 999px; overflow: hidden; background: var(--surface-2); }
+    .progress-bar { height: 100%; width: 0; background: var(--primary); transition: width 300ms ease; }
+    .controls { display: flex; align-items: center; justify-content: space-between; gap: 16px; }
+    .hint { color: var(--muted); font-size: .86rem; }
+    .button-row { display: flex; gap: 8px; }
+    .button {
+      min-height: 42px;
+      padding: 9px 14px;
+      border: 1px solid var(--border);
+      border-radius: 10px;
+      background: var(--surface);
+      color: var(--text);
+      cursor: pointer;
+    }
+    .button:hover:not(:disabled) { border-color: var(--primary); }
+    .button:focus-visible { outline: 3px solid var(--primary-soft); outline-offset: 2px; }
+    .button.primary { border-color: var(--primary); background: var(--primary); color: #ffffff; font-weight: 700; }
+    .button:disabled { cursor: not-allowed; opacity: .42; }
+    footer { margin-top: 16px; color: var(--muted); text-align: center; font-size: .8rem; }
+    @media (max-width: 760px) {
+      .page { width: min(100% - 20px, 1180px); padding-top: 20px; }
+      .demo-card { padding: 12px; border-radius: 15px; }
+      .hero, .state-row, .controls { align-items: stretch; flex-direction: column; }
+      .step-badge, .operation-badge { align-self: flex-start; }
+      .headers { grid-template-columns: 1fr; }
+      .stage { min-height: 300px; }
+      .device-meta, .direction-path { display: none; }
+      .button-row { width: 100%; }
+      .button { flex: 1; padding-inline: 8px; }
+    }
+    @media (prefers-reduced-motion: reduce) {
+      .packet, .packet-segment, .progress-bar { transition: none; }
+    }
+  </style>
+</head>
+<body>
+  <main class="page">
+    <header class="hero">
+      <div>
+        <h1>Encapsulation, Routing, and Decapsulation</h1>
+        <p class="subtitle">The packet gains a header when moving down and removes it when moving up.</p>
+      </div>
+      <span class="step-badge" id="step-badge">Step 1 / 21</span>
+    </header>
+
+    <section class="demo-card" aria-label="Interactive packet routing demonstration">
+      <div class="stage">
+        <svg class="route-svg" viewBox="0 0 1120 460" role="img" aria-labelledby="packet-title packet-desc">
+          <title id="packet-title">Layer-by-layer packet animation from Host A through R1 and R2 to Host B</title>
+          <desc id="packet-desc">The sender adds IP and MAC headers, each router replaces the MAC header, and the receiver removes the headers.</desc>
+          <path class="direction-path" d="M100 76 L100 300 L380 300 L380 132 L380 300 L740 300 L740 132 L740 300 L1020 300 L1020 76"></path>
+
+          <text class="device-label" x="100" y="24">Host A</text>
+          <text class="device-meta small" x="100" y="42">Source Host</text>
+          <g class="layer" data-device="a" data-layer="upper"><rect class="layer-box" x="30" y="52" width="140" height="48" rx="8"></rect><text class="layer-label" x="100" y="82">Upper Layers</text></g>
+          <g class="layer" data-device="a" data-layer="ip"><rect class="layer-box" x="30" y="108" width="140" height="48" rx="8"></rect><text class="layer-label" x="100" y="138">IP</text></g>
+          <g class="layer" data-device="a" data-layer="eth"><rect class="layer-box" x="30" y="164" width="140" height="48" rx="8"></rect><text class="layer-label" x="100" y="194">Ethernet</text></g>
+          <g class="layer" data-device="a" data-layer="phy"><rect class="layer-box" x="30" y="220" width="140" height="48" rx="8"></rect><text class="layer-label" x="100" y="250">Physical</text></g>
+
+          <text class="device-label" x="380" y="80">Router R1</text>
+          <g class="layer" data-device="r1" data-layer="ip"><rect class="layer-box" x="310" y="108" width="140" height="48" rx="8"></rect><text class="layer-label" x="380" y="138">IP</text></g>
+          <g class="layer" data-device="r1" data-layer="eth"><rect class="layer-box" x="310" y="164" width="140" height="48" rx="8"></rect><text class="layer-label" x="380" y="194">Ethernet</text></g>
+          <g class="layer" data-device="r1" data-layer="phy"><rect class="layer-box" x="310" y="220" width="140" height="48" rx="8"></rect><text class="layer-label" x="380" y="250">Physical</text></g>
+
+          <text class="device-label" x="740" y="80">Router R2</text>
+          <g class="layer" data-device="r2" data-layer="ip"><rect class="layer-box" x="670" y="108" width="140" height="48" rx="8"></rect><text class="layer-label" x="740" y="138">IP</text></g>
+          <g class="layer" data-device="r2" data-layer="eth"><rect class="layer-box" x="670" y="164" width="140" height="48" rx="8"></rect><text class="layer-label" x="740" y="194">Ethernet</text></g>
+          <g class="layer" data-device="r2" data-layer="phy"><rect class="layer-box" x="670" y="220" width="140" height="48" rx="8"></rect><text class="layer-label" x="740" y="250">Physical</text></g>
+
+          <text class="device-label" x="1020" y="24">Host B</text>
+          <text class="device-meta small" x="1020" y="42">Destination Host</text>
+          <g class="layer" data-device="b" data-layer="upper"><rect class="layer-box" x="950" y="52" width="140" height="48" rx="8"></rect><text class="layer-label" x="1020" y="82">Upper Layers</text></g>
+          <g class="layer" data-device="b" data-layer="ip"><rect class="layer-box" x="950" y="108" width="140" height="48" rx="8"></rect><text class="layer-label" x="1020" y="138">IP</text></g>
+          <g class="layer" data-device="b" data-layer="eth"><rect class="layer-box" x="950" y="164" width="140" height="48" rx="8"></rect><text class="layer-label" x="1020" y="194">Ethernet</text></g>
+          <g class="layer" data-device="b" data-layer="phy"><rect class="layer-box" x="950" y="220" width="140" height="48" rx="8"></rect><text class="layer-label" x="1020" y="250">Physical</text></g>
+
+          <line class="network-line" data-wire="left" x1="170" y1="300" x2="310" y2="300"></line>
+          <line class="network-line" data-wire="middle" x1="450" y1="300" x2="670" y2="300"></line>
+          <line class="network-line" data-wire="right" x1="810" y1="300" x2="950" y2="300"></line>
+
+          <text class="network-label small" x="120" y="334">Host A Interface</text><text class="network-label small" x="120" y="352">111.111.111.111</text><text class="network-label small" x="120" y="370">11-11-11-11-11-11</text>
+          <text class="network-label small" x="310" y="334">R1 Left Interface</text><text class="network-label small" x="310" y="352">111.111.111.110</text><text class="network-label small" x="310" y="370">22-22-22-22-22-22</text>
+          <text class="network-label small" x="470" y="334">R1 Right Interface</text><text class="network-label small" x="470" y="352">150.150.150.1</text><text class="network-label small" x="470" y="370">33-33-33-33-33-33</text>
+          <text class="network-label small" x="650" y="334">R2 Left Interface</text><text class="network-label small" x="650" y="352">150.150.150.2</text><text class="network-label small" x="650" y="370">44-44-44-44-44-44</text>
+          <text class="network-label small" x="810" y="334">R2 Right Interface</text><text class="network-label small" x="810" y="352">222.222.222.220</text><text class="network-label small" x="810" y="370">55-55-55-55-55-55</text>
+          <text class="network-label small" x="1000" y="334">Host B Interface</text><text class="network-label small" x="1000" y="352">222.222.222.222</text><text class="network-label small" x="1000" y="370">66-66-66-66-66-66</text>
+
+          <g class="packet" id="moving-packet">
+            <g class="packet-segment packet-mac is-hidden" id="packet-mac"><rect x="-104" y="-19" width="74" height="38"></rect><text class="packet-text small" x="-67" y="5">MAC</text></g>
+            <g class="packet-segment packet-ip is-hidden" id="packet-ip"><rect x="-28" y="-19" width="56" height="38"></rect><text class="packet-text small" x="0" y="5">IP</text></g>
+            <g class="packet-segment packet-data"><rect x="30" y="-19" width="74" height="38"></rect><text class="packet-text small" x="67" y="5">DATA</text></g>
+          </g>
+          <text class="network-label small" id="packet-shape-label" x="100" y="420">DATA</text>
+        </svg>
+      </div>
+
+      <div class="state-row" aria-live="polite">
+        <div><h2 class="state-title" id="state-title">Host A · Upper Layers</h2><p class="state-description" id="state-description">The upper layers generate the original data. No header has been added yet.</p></div>
+        <span class="operation-badge" id="operation-badge">Original Data</span>
+      </div>
+
+      <div class="headers" aria-live="polite">
+        <section class="header-card">
+          <div class="header-name"><span class="dot"></span>IP Header</div>
+          <dl><dt>Source IP</dt><dd id="source-ip">Empty</dd><dt>Destination IP</dt><dd id="destination-ip">Empty</dd></dl>
+        </section>
+        <section class="header-card mac">
+          <div class="header-name"><span class="dot"></span>MAC Header</div>
+          <dl><dt>Source MAC</dt><dd id="source-mac">Empty</dd><dt>Destination MAC</dt><dd id="destination-mac">Empty</dd></dl>
+        </section>
+      </div>
+
+      <div class="progress" role="progressbar" aria-label="Animation progress" aria-valuenow="0" aria-valuemin="0" aria-valuemax="20"><div class="progress-bar" id="progress-bar"></div></div>
+      <div class="controls">
+        <span class="hint">Going back restores the exact header state of the previous layer.</span>
+        <div class="button-row">
+          <button class="button" id="previous-step" type="button" disabled>Previous</button>
+          <button class="button primary" id="play-animation" type="button">Play Animation</button>
+          <button class="button" id="next-step" type="button">Next</button>
+        </div>
+      </div>
+    </section>
+    <footer>End-to-end source and destination IP addresses remain unchanged; MAC addresses change on every link.</footer>
+  </main>
+
+  <script>
+    (() => {
+      const states = [
+        {x:100,y:76,device:'a',layer:'upper',ip:false,mac:null,wire:null,op:'Original Data',title:'Host A · Upper Layers',desc:'The upper layers generate the original data. No header has been added yet.'},
+        {x:100,y:132,device:'a',layer:'ip',ip:true,mac:null,wire:null,op:'Add IP Header',title:'Host A · IP',desc:'Entering the IP layer adds the end-to-end source and destination IP addresses.'},
+        {x:100,y:188,device:'a',layer:'eth',ip:true,mac:'left',wire:null,op:'Add MAC Header',title:'Host A · Ethernet',desc:'Add the source and destination MAC addresses for the first hop, A to R1.'},
+        {x:100,y:244,device:'a',layer:'phy',ip:true,mac:'left',wire:'left',op:'Encode as Signals',title:'Host A · Physical',desc:'The complete frame enters the physical layer. Its headers remain unchanged.'},
+        {x:240,y:300,device:null,layer:null,ip:true,mac:'left',wire:'left',op:'Link Transmission',title:'Link A → R1',desc:'The frame moves across the first link to the left interface of R1.'},
+        {x:380,y:244,device:'r1',layer:'phy',ip:true,mac:'left',wire:'left',op:'Receive Signals',title:'R1 · Physical Ingress',desc:'The left interface of R1 receives the signals. The headers remain unchanged.'},
+        {x:380,y:188,device:'r1',layer:'eth',ip:true,mac:'left',wire:'left',op:'Read Incoming Frame',title:'R1 · Ethernet Ingress',desc:'R1 reads the MAC header for the A-to-R1 link.'},
+        {x:380,y:132,device:'r1',layer:'ip',ip:true,mac:null,wire:null,op:'Remove Old MAC Header',title:'R1 · IP',desc:'R1 removes the first-hop MAC header and uses the destination IP to select its right interface.'},
+        {x:380,y:188,device:'r1',layer:'eth',ip:true,mac:'middle',wire:null,op:'Add New MAC Header',title:'R1 · Ethernet Egress',desc:'R1 adds new source and destination MAC addresses for the R1-to-R2 link.'},
+        {x:380,y:244,device:'r1',layer:'phy',ip:true,mac:'middle',wire:'middle',op:'Encode as Signals',title:'R1 · Physical Egress',desc:'The re-encapsulated frame leaves the right interface of R1. The IP header is unchanged.'},
+        {x:560,y:300,device:null,layer:null,ip:true,mac:'middle',wire:'middle',op:'Link Transmission',title:'Link R1 → R2',desc:'The frame moves across the middle link to the left interface of R2.'},
+        {x:740,y:244,device:'r2',layer:'phy',ip:true,mac:'middle',wire:'middle',op:'Receive Signals',title:'R2 · Physical Ingress',desc:'The left interface of R2 receives the signals. The headers remain unchanged.'},
+        {x:740,y:188,device:'r2',layer:'eth',ip:true,mac:'middle',wire:'middle',op:'Read Incoming Frame',title:'R2 · Ethernet Ingress',desc:'R2 reads the MAC header for the R1-to-R2 link.'},
+        {x:740,y:132,device:'r2',layer:'ip',ip:true,mac:null,wire:null,op:'Remove Old MAC Header',title:'R2 · IP',desc:'R2 removes the second-hop MAC header and uses the destination IP to select its right interface.'},
+        {x:740,y:188,device:'r2',layer:'eth',ip:true,mac:'right',wire:null,op:'Add New MAC Header',title:'R2 · Ethernet Egress',desc:'R2 adds new source and destination MAC addresses for the R2-to-B link.'},
+        {x:740,y:244,device:'r2',layer:'phy',ip:true,mac:'right',wire:'right',op:'Encode as Signals',title:'R2 · Physical Egress',desc:'The re-encapsulated frame leaves the right interface of R2. The IP header is unchanged.'},
+        {x:880,y:300,device:null,layer:null,ip:true,mac:'right',wire:'right',op:'Link Transmission',title:'Link R2 → B',desc:'The frame moves across the final link to Host B.'},
+        {x:1020,y:244,device:'b',layer:'phy',ip:true,mac:'right',wire:'right',op:'Receive Signals',title:'Host B · Physical',desc:'Host B receives the physical signals. The headers remain unchanged.'},
+        {x:1020,y:188,device:'b',layer:'eth',ip:true,mac:'right',wire:'right',op:'Read Incoming Frame',title:'Host B · Ethernet',desc:'Host B receives a frame addressed to its MAC address.'},
+        {x:1020,y:132,device:'b',layer:'ip',ip:true,mac:null,wire:null,op:'Remove MAC Header',title:'Host B · IP',desc:'Moving up to the IP layer removes the MAC header and checks the destination IP.'},
+        {x:1020,y:76,device:'b',layer:'upper',ip:false,mac:null,wire:null,op:'Remove IP Header',title:'Host B · Upper Layers',desc:'Moving up to the upper layers removes the IP header and delivers the original data.'}
+      ];
+      const macHeaders = {
+        left: {source:'11-11-11-11-11-11',destination:'22-22-22-22-22-22'},
+        middle: {source:'33-33-33-33-33-33',destination:'44-44-44-44-44-44'},
+        right: {source:'55-55-55-55-55-55',destination:'66-66-66-66-66-66'}
+      };
+      const q = selector => document.querySelector(selector);
+      const qa = selector => Array.from(document.querySelectorAll(selector));
+      let index = 0;
+      let timer = null;
+      let moving = false;
+
+      function setPacketShape(state) {
+        q('#packet-ip').classList.toggle('is-hidden', !state.ip);
+        q('#packet-mac').classList.toggle('is-hidden', !state.mac);
+        q('#packet-shape-label').textContent = `${state.mac ? 'MAC + ' : ''}${state.ip ? 'IP + ' : ''}DATA`;
+        q('#source-ip').textContent = state.ip ? '111.111.111.111' : 'Empty';
+        q('#destination-ip').textContent = state.ip ? '222.222.222.222' : 'Empty';
+        q('#source-mac').textContent = state.mac ? macHeaders[state.mac].source : 'Empty';
+        q('#destination-mac').textContent = state.mac ? macHeaders[state.mac].destination : 'Empty';
+      }
+
+      function updateText(state) {
+        q('#step-badge').textContent = `Step ${index + 1} / ${states.length}`;
+        q('#state-title').textContent = state.title;
+        q('#state-description').textContent = state.desc;
+        q('#operation-badge').textContent = state.op;
+        q('#progress-bar').style.width = `${index / (states.length - 1) * 100}%`;
+        q('.progress').setAttribute('aria-valuenow', String(index));
+        q('#previous-step').disabled = moving || index === 0;
+        q('#next-step').disabled = moving || index === states.length - 1;
+      }
+
+      function highlight(state) {
+        qa('.layer').forEach(el => el.classList.toggle('active', el.dataset.device === state.device && el.dataset.layer === state.layer));
+        qa('[data-wire]').forEach(el => el.classList.toggle('active', el.dataset.wire === state.wire));
+      }
+
+      function renderImmediate(target) {
+        index = target;
+        const state = states[index];
+        q('#moving-packet').style.transform = `translate(${state.x}px, ${state.y}px)`;
+        q('#packet-shape-label').setAttribute('x', state.x);
+        setPacketShape(state);
+        highlight(state);
+        updateText(state);
+      }
+
+      function moveTo(target) {
+        if (moving || target < 0 || target >= states.length || target === index) return;
+        moving = true;
+        const state = states[target];
+        updateText(states[index]);
+        q('#moving-packet').style.transform = `translate(${state.x}px, ${state.y}px)`;
+        q('#packet-shape-label').setAttribute('x', state.x);
+        highlight(state);
+        window.setTimeout(() => {
+          index = target;
+          setPacketShape(state);
+          moving = false;
+          updateText(state);
+          if (timer && index === states.length - 1) stopPlaying();
+        }, 980);
+      }
+
+      function stopPlaying() {
+        if (timer) window.clearInterval(timer);
+        timer = null;
+        q('#play-animation').textContent = index === states.length - 1 ? 'Replay' : 'Play Animation';
+      }
+
+      function startPlaying() {
+        if (index === states.length - 1) renderImmediate(0);
+        q('#play-animation').textContent = 'Pause';
+        moveTo(index + 1);
+        timer = window.setInterval(() => {
+          if (!moving && index < states.length - 1) moveTo(index + 1);
+          if (index === states.length - 1) stopPlaying();
+        }, 1750);
+      }
+
+      q('#previous-step').addEventListener('click', () => { stopPlaying(); moveTo(index - 1); });
+      q('#next-step').addEventListener('click', () => { stopPlaying(); moveTo(index + 1); });
+      q('#play-animation').addEventListener('click', () => timer ? stopPlaying() : startPlaying());
+      renderImmediate(0);
+    })();
+  </script>
+</body>
+</html>
